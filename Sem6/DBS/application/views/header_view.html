@@ -1,0 +1,70 @@
+	<!DOCTYPE html>
+<html lang="sk">
+	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta charset="UTF-8">
+		<title>Movies</title>
+
+  		<link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css">
+		<!--<link rel="stylesheet" href="/movies/assets/css/bootstrap.min.css">-->
+		<script src="/movies/assets/js/jquery.min.js"></script>
+		<script src="/movies/assets/js/bootstrap.min.js"></script>
+		<script src="/movies/assets/js/jquery.tablesorter.min.js"></script>
+		<script src="/movies/assets/js/script.js"></script>
+		<script src="/movies/assets/js/bootstrap-multiselect.js"></script>
+		<link rel="stylesheet" href="/movies/assets/css/styles.css">
+		<link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css">
+		<script src="//code.jquery.com/ui/1.11.4/jquery-ui.js"></script>
+		<!--
+		<script src="/movies/assets/js/jquery.bootstrap-touchspin.js"></script>
+		<link rel="stylesheet" href="/movies/assets/css/jquery.bootstrap-touchspin.css">-->
+		<link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.4.0/css/font-awesome.min.css">
+		<link href="/movies/assets/css/animate.min.css" rel="stylesheet" />
+		<link rel="stylesheet" href="//code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css" />
+	</head>
+	<body>
+		<nav class="navbar navbar-default navbar-fixed-top">
+			<div class="container-fluid">
+				<div class="navbar-header">
+					<a class="navbar-brand" href="/movies">DBS-Movies</a>
+				</div>
+				<ul class="nav navbar-nav">
+					<?php
+						wrapToTag(makeLink(word("movies"), 		movieURL), 		"li", TRUE);
+						wrapToTag(makeLink(word("makers"), 		makerURL), 		"li", TRUE);
+						wrapToTag(makeLink(word("loans"), 		loanURL), 		"li", TRUE);
+						wrapToTag(makeLink(word("genres"), 		genreURL), 		"li", TRUE);
+						wrapToTag(makeLink(word("tags"),		tagURL), 		"li", TRUE);
+						wrapToTag(makeLink(word("countries"), 	countryURL), 	"li", TRUE);
+						wrapToTag(makeLink(word("years"), 		yearURL), 		"li", TRUE);
+					?>
+				</ul>
+				<ul class="nav navbar-nav navbar-right">
+					<?php
+						if(is_login()):
+					?>
+						<li>
+							<a href="<?=logoutURL . str_replace("/", "_", uri_string())?>">
+								<span class="glyphicon glyphicon-log-in"></span><?= " " . word("logout")?>
+							</a>
+						</li>
+					<?php
+						else:
+					?>					
+						<li>
+							<a href="<?=regURL?>">
+								<span class="glyphicon glyphicon-user"></span><?= " " . word("register")?>
+							</a>
+						</li>
+						<li>
+							<a href="<?=loginURL . str_replace("/", "_", uri_string())?>">
+								<span class="glyphicon glyphicon-log-in"></span><?= " " . word("login")?>
+							</a>
+						</li>
+					<?php
+						endif;
+					?>
+				</ul>
+			</div>
+		</nav>
+		<div class="container">

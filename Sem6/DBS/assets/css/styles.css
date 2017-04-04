@@ -1,0 +1,104 @@
+.glist:hover{
+	background-color: rgba(145, 123, 123, .1);
+	cursor: pointer;
+}
+.gScrollable{
+	max-height: 320px; 
+	overflow-y: auto;
+}
+body{
+	margin-top:50px;
+}
+
+label{
+	cursor: pointer;
+}
+
+.hidden{
+	display: none;
+}
+
+#moviesList{
+	overflow-y: auto; 
+	border: 1px solid #ddd; 
+	border-radius: 4px;
+	padding: 4px;
+}
+
+.spinner {
+	display: inline-block;
+	opacity: 0;
+	width: 0;
+
+	-webkit-transition: opacity 0.25s, width 0.25s;
+	-moz-transition: opacity 0.25s, width 0.25s;
+	-o-transition: opacity 0.25s, width 0.25s;
+	transition: opacity 0.25s, width 0.25s;
+}
+
+.has-spinner.active {
+	cursor:progress;
+}
+
+.has-spinner.active .spinner {
+	opacity: 1;
+	width: auto; /* This doesn't work, just fix for unkown width elements */
+}
+
+.has-spinner.btn-mini.active .spinner {
+	width: 10px;
+}
+
+.has-spinner.btn-small.active .spinner {
+	width: 13px;
+}
+
+.has-spinner.btn.active .spinner {
+	width: 16px;
+}
+
+.has-spinner.btn-large.active .spinner {
+	width: 19px;
+}
+
+.image-text{
+	margin: 5px;
+    left: 0;
+    width: calc(100% - 10px); 
+    height: 0px; 
+    position: absolute;
+    background-color:rgba(255, 255, 255, 0.9); 
+    line-height: 40px; 
+    text-align: center;
+    font-size: 130%; 
+    font-weight: bold;
+    -webkit-transition: all 0.5s; /* Safari */
+    transition: all 0.5s;
+    overflow: hidden;
+}
+
+.show:hover .image-text{
+    height: 40px;
+    line-height: 40px; 
+}
+
+.image-text-top{
+    margin: 5px;
+    left: 0;
+    width: calc(100% - 10px); 
+    height: 40px; 
+    position: absolute;
+    background-color:rgba(255, 255, 255, 0.9); 
+    line-height: 40px; 
+    text-align: center;
+    font-size: 130%; 
+    font-weight: bold;
+    -webkit-transition: all 0.5s; /* Safari */
+    transition: all 0.5s;
+    overflow: hidden;
+    top:-40px;
+}
+
+.show:hover .image-text-top{
+    top:0;
+}

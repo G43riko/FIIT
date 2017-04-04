@@ -1,0 +1,60 @@
+<?php if(!isset($hideHeader))$this -> load -> view('header_view.html'); ?>
+	<h3><?= word("movies") ?></h3>
+	<?php if(is_login()): ?>
+		<a href="<?=movieURL?>searchIMDB"><?= word("addMovie")?></a> |
+		<a href="<?=movieEditURL?>"><?= word("createMovie")?></a> |
+	<?php endif; ?>
+	<a href="<?=movieURL?>posters"><?= word("showPosters")?></a> |
+	<label for="movie_key"><?= word("searchMovie") ?>:</label>
+	
+	<input 	type="text" 
+			class="form-control-input" 
+			placeholder="<?= word("search")?>" 
+			id="movie_key" 
+			<?php if(isset($search))echo "value='$search'"; ?>
+			autofocus
+			onkeyup="searchMovieDB(event<?php if(isset($path)) echo ", '$path'";?>)"> | 
+	
+	<a href="http://localhost/movies/movies/qsearch">Pokročilé vyhladávanie</a>
+
+	<table class="table table-striped tablesorter sortable">
+		<thead>
+			<tr>
+				<?php
+					foreach($data as $key => $value)
+						if($value)
+							wrapToTag($value, "th", 1);
+				?>
+			</tr>
+		</thead>
+		<tbody>
+			<?php
+				if($movies)
+					foreach($movies as $movie):
+						echo "<tr>";
+						foreach($data as $key => $value)
+							if($value):
+								if($key == "title"){
+									/*
+									$link = movieDetailURL . $movie["movie_id"];
+									wrapToTag(makeLink($movie[$key], $link), "td", 1);
+									*/
+									
+									$attr = "data-toggle='modal' data-target='#detailModal' ";
+									$link = wrapToTag($movie[$key], "a", 0, "style='cursor: pointer;' $attr");
+									$attr = "onclick='loadMovieModal(" . $movie["movie_id"] . ")'";
+									wrapToTag($link, "td", 1, $attr);
+								}
+								else if($key == "imdb_id")
+									wrapToTag(makeLink("imdb", imdbMovieURL . $movie[$key], 0, 1), "td", 1);
+								else
+									wrapToTag($movie[$key], "td", 1);
+							endif;
+						echo "</tr>";
+					endforeach;
+				else
+					wrapToTag(wrapToTag(word("noResults"), "td", 0, "colspan='" . count($data). "'"), "tr", 1);
+			?>
+		</tbody>
+	</table>
+<?php if(!isset($hideFooter))$this -> load -> view('footer_view.html'); ?>
