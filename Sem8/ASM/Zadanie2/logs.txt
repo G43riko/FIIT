@@ -1,0 +1,7 @@
+logovacieho suboru logs.txt bol nastaveny
+spracuvava sa riadok 
+ = (null)
+vola sa funkcia mainLoop
+cakam na vstup...
+vola sa funkcia halt
+vola sa funkcia shell(echo gaboooo, 1)
