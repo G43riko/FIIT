@@ -7,6 +7,13 @@
 #include <stdarg.h>
 #include <string.h>
 
+
+#ifndef _STRING_H_
+#include <string.h>
+#endif
+#define START_WITH(x, y) (strstr(x, y) == x ? 1 : 0)
+#define CONTAINS(x, y) (strstr(x, y) != NULL ? 1 : 0)
+
 #define IS_NULL(x) (x == NULL)
 #define IS_NOT_NULL(x) (!IS_NULL(x))
 #define STRING(x) (IS_NULL(x) ? "NULL" : x)
@@ -15,6 +22,9 @@
 #define TYPE_NORMAL 0
 #define TYPE_SERVER 1
 #define TYPE_CLIENT 2
+#define RUN_CONTENT "######"
+#define RUN_SIZE 6 //počet znakov v premennej RUN_CONTENT
+#define RUN_FINISH "******"
 #define ERROR(args...) fprintf(opt.errorStream, args);
 #define LOG(args...) if(opt.logs){ERROR(args)}
 #define PRINT(args...) dprintf(opt.outDesc, args);
@@ -26,6 +36,15 @@ typedef struct{
 }FileHandler;
 
 typedef struct{
+    int isWord;
+    int numLines;
+    int numWords;
+    int numChars;
+}ClientData;
+
+ClientData *  initClient(void);
+
+typedef struct{
     char demon;
     //FileHandler * configFile;
     FileHandler * logFile;
@@ -34,6 +53,8 @@ typedef struct{
     FILE * inputStream;
     int outDesc;
     int nfds;
+    int maxClients;
+    int numClients;
     char * host;
     int running;
     int port;

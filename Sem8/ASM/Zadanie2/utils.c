@@ -15,6 +15,15 @@ FileHandler * openFile(char * name, char * mode){
     return file;
 }
 
+ClientData *  initClient(void){
+    ClientData * client = (ClientData *)malloc(sizeof(ClientData));
+    client -> isWord    = 0;
+    client -> numLines  = 0;
+    client -> numWords  = 0;
+    client -> numChars  = 0;
+    return client;
+}
+
 void showOpt(Options o){
     PRINT("running: %d\n", opt.running);
     PRINT("demon: %d\nlogs: %d\n", o.demon, o.logs);
@@ -40,6 +49,8 @@ void initOpt(Options * opt){
     opt -> host         = "localhost";
     opt -> demon        = opt -> logs = opt -> running = opt -> outDesc = opt -> nfds = 0;
     opt -> running      = 1;
+    opt -> maxClients   = 1;
+    opt -> numClients   = 0;
     opt -> logFile      = NULL;
     opt -> inputStream  = stdin;
     opt -> errorStream  = stderr;

@@ -4,26 +4,31 @@
  * Splnene bonusove ulohy:
  * + 01 (0.5 bodu) Príkaz "cat" ktorý zadaný vstup pošle bez zmeny na výstup (pre účely ladenia)
  * + 02 (2 bod) Jeden z príkazov bude využívať funkcie implementované v samostatnej knižnici, ktorá bude "prilinkovaná" k hlavnému programu.
- * - (3 body) Ak je niektoré spojenie nečinné zadanú dobu, bude zrušené.
- * - (1 bod) Doba nečinnosti z predchádzajúceho bodu môže byť zadaná za argumentom "-t" a/alebo ako premenná prostredia.
+ * - 03 (3 body) Ak je niektoré spojenie nečinné zadanú dobu, bude zrušené.
+ * - 04 (1 bod) Doba nečinnosti z predchádzajúceho bodu môže byť zadaná za argumentom "-t" a/alebo ako premenná prostredia.
  * + 05 (1 bod) Ak príkaz nebude programom rozoznaný, tak celý zadaný riadok s príkazom sa vykoná ako príkaz OS (resp. shell-u).
  * + 07 (0.5 bodu) S prepínačom "-v" sa budú zobrazovať pomocné (debugg-ovacie) výpisy na štandardný chybový výstup (stderr).
  * + 08 (1 bod) Príkazy musia byť rozoznané aj ako argumenty na príkazovom riadku (e.g. -halt, -info, -run) v kombinácii s prepínačom "-c", vtedy sa vykonajú jednorazovo a program sa ukončí.
- * - 09 (1 bod) Zmysluplné použitie premennej prostredia (e.g. to, akým spôsobom sa program bude správať keď nebude zadaný ani jeden z prepínačov "-s" a "-c").
- * - 11 (2 body) Program s prepínačom "-s" a "-d" sa bude správať ako démon (neobsadí terminál), nebude používať štandardný vstup a výstup.
+ * + 09 (1 bod) Zmysluplné použitie premennej prostredia (e.g. to, akým spôsobom sa program bude správať keď nebude zadaný ani jeden z prepínačov "-s" a "-c").
+ * + 10 (5 body) Príkazy halt, quit a info sa vykonajú po zachytení zvoleného signálu (rozmyslieť klient/server).
+ *!-!11 (2 body) Program s prepínačom "-s" a "-d" sa bude správať ako démon (neobsadí terminál), nebude používať štandardný vstup a výstup.
  * + 12 (1 bod) Program s prepínačom "-l" a menom súboru bude do neho zapisovať záznamy o vykonávaní (log-y).
  * + 13 (2 body) Program s prepínačom "-c" a menom súboru načíta konfiguráciu zo súboru (doba nečinnosti, log súbor, ...).
- * - 14 (1 bod) Predvolené meno konfiguračného súboru nastavené v premennej prostredia.
+ * + 14 (1 bod) Predvolené meno konfiguračného súboru nastavené v premennej prostredia.
  * + 17 (2 body) Poriadny Makefile.
  * - 18 (3 body) Vytvorenie a použitie konfiguračného skriptu (./configure).
-
+ * + 20 (12 bodov) Rekurzívne vypísať zoznam súborov v zadanom adresári (ako 'ls').
  otazky
  	casovy interval je na klientovy
+ 	co sa udeje na klientovy po quit??
+ 	prepínač -C?? je viac krát?	
  */
 #include <utils.h>
 #include <unistd.h>
+#include <signal.h>
 #include <time.h>
-
+#include <errno.h>
+#include <dirent.h>
 
 #if defined(__gnu_linux__) || defined(__linux__)
 	#include <sys/types.h> 
@@ -33,14 +38,30 @@
 	#include <netdb.h>
 #endif	
 
-#define BUFFER_SIZE 256
-#define MAX_CLIENTS 5
-#define CHUNK_SIZE	20
-#define DEF_TIMEOUT	20
+#define BUFFER_SIZE 21		//velkosť buffera ktorým sa odosielaju a príjmajú dáta
+#define MAX_CLIENTS 5		//maximálny počet klientov
+#define CHUNK_SIZE	10		//velkosť po akej sa číta súbor
+#define DEF_TIMEOUT	10000	//po akom čase sa má odhlásiť socket
+#define DEF_PORT 	3333	//defaultny port na ktorom prebieha komunikacia
+
+#define SIGNAL_CONFIG SIGUSR1
+#define SIGNAL_HALT SIGINT
+#define SIGNAL_QUIT SIGUSR1
+#define SIGNAL_INFO SIGUSR2
 
 fd_set openedSocks;
 Options opt; 
+ClientData ** clients = NULL;
 
+struct tms {
+	clock_t tms_utime;  // user time
+	clock_t tms_stime;  // system time
+	clock_t tms_cutime; // user time of children
+	clock_t tms_cstime; // system time of children
+};
+
+struct tms * startTime;
+struct tms * actTime;
 /****************************************ULOHY*******************************************************/
 
 /**
@@ -82,30 +103,131 @@ void halt(void){
 	//zalogujeme ak treba
 	LOG("vola sa funkcia halt()\n");
 
-	//ak je descriptor 0 tak sa jedna o vstup z klavesnice čiže funkia je volana na servery
-	if(opt.outDesc == 0){
-		//zalogujeme ak treba
-		LOG("ukoncuje sa server\n");
+	LOG("ukoncuje sa %s\n", opt.type == TYPE_SERVER ? "server" : "client");
 
+	/*
+	//ak je descriptor 0 tak sa jedna o vstup z klavesnice
+	if(opt.outDesc == 0){
+	*/
 		//zatvori vsetky sockety s descriptorom i, okrem 0, 1, 2 - stdin, stdout, stderr
 		for(int i=3 ; i<=(opt.nfds) ; i++){
-			close(i);						
-			FD_CLR(i, &openedSocks);		//zmaze ich zo zoznamu (vymaze bit)
-		}
+			close(i);
 
-		//zastavime program
-		opt.running = 0;
+			//zmazeme ich zo zoznamu (vymaze bit)
+			FD_CLR(i, &openedSocks);
+		}
+	/*
 	}
 	else{
-		//zalogujeme ak treba
-		LOG("ukoncuje sa client\n");
-
 		//zavrieme klienta
 		close(opt.outDesc);
 
 		//odstranime ho zo zoznamu							
 		FD_CLR(opt.outDesc, &openedSocks);
 	}
+	*/
+	//zastavime program
+	opt.running = 0;
+}
+
+/**
+ * Funkcia odpojí a ukončé klienta
+ */
+void quit(void){
+	//zalogujeme ak treba
+	LOG("vola sa funkcia halt()\n");
+
+	LOG("odpaja sa klient s id %d\n", opt.outDesc);
+
+	//
+	if(opt.outDesc != 0){
+		//zavrieme klienta
+		close(opt.outDesc);
+
+		//odstranime ho zo zoznamu							
+		FD_CLR(opt.outDesc, &openedSocks);
+	}
+}
+
+/**
+ * Funkcia odošle požadovanú správu do descriptora na vstupe
+ *
+ * @param descriptor
+ * @param buffer
+ */
+void sendMessage(int descriptor, char * buffer){
+	LOG("odosiela sa sprava %s\n", buffer);
+	int n = write(descriptor, buffer, strlen(buffer));
+	if (n < 0){
+		ERROR("Nastala chyba pri pisani do socketu(%d)\n", descriptor);
+	}
+}
+
+/**
+ * Funkcia vráti PID procesu
+ * @return
+ */
+int getPID(void){
+	asm("movl $0x14,%EAX;"
+			"int $0x80;");
+}
+
+/**
+ * Funkcia uspí program na určitú dobu
+ * @param sec
+ * @param nsec
+ */
+void gsleep(int sec, int nsec){
+	struct timespec tim, tim2;
+	tim.tv_sec = sec;
+	tim.tv_nsec = nsec;
+	nanosleep(&tim , &tim2);
+}
+
+/**
+ * Funckia skontroluje a spracuje príkaz run zadaný clientom
+ *
+ * @param sockfd
+ * @param messageBuffer
+ * @return
+ */
+int checkRun(int sockfd, char * messageBuffer){
+	//zalogujeme ak treba
+	LOG("vola sa funkcia checkRun(%d, %s)\n", sockfd, messageBuffer);
+
+	//ak vstup začina slovom run tak sa volá prikaz
+	if(START_WITH(messageBuffer, "run ")){
+		LOG("subor na spustenie je: %s\n", messageBuffer + 4);
+
+		//odstranime znak koniec riadku z názvu súboru
+		messageBuffer[strlen(messageBuffer) - 1] = 0;
+
+		//otvoríme súbor
+		FileHandler * file = openFile(messageBuffer + 4, "r");
+		char * buffer = malloc(CHUNK_SIZE);
+		int sizeRead;
+		if (IS_NULL(buffer)) {
+			ERROR("nepodarilo sa alokovat pamat o velkosti %d bajtov\n", CHUNK_SIZE);
+		}
+		while((sizeRead = fread(buffer, 1, CHUNK_SIZE - 1, file -> handler)) > 0){
+			buffer[sizeRead] = 0;
+			memset(messageBuffer, 0, BUFFER_SIZE);
+			strcpy(messageBuffer, RUN_CONTENT);
+			messageBuffer = strcat(messageBuffer, buffer);
+			gsleep(0, 500);
+			sendMessage(sockfd, messageBuffer);
+		}
+
+		gsleep(0, 500);
+		
+		sendMessage(sockfd, RUN_FINISH);
+		
+		//sendMessage(sockfd, );
+		free(buffer);
+		closeFile(file);
+		return 1;
+	}
+	return 0;
 }
 
 /**
@@ -120,21 +242,86 @@ void help(void){
 	PRINT(" -halt: ukonci program\n");
 	PRINT(" -info: zobrazi systemove informacie\n");
 	PRINT(" -help: zobrazi napovedu\n");
+	PRINT(" -quit: klient sa odpoji od servera a nasledne sa ukonci\n");
 	PRINT(" -cat: vypise nasledujuci argument\n");
+	PRINT(" -scan: vypise obsah adresara zadany ako dalsi argument\n");
 	PRINT(" -run: spusti program zadany v nasledujucom argumente\n");
 	PRINT("Prepinace programu:\n");
 	PRINT(" -v: zapne debugovaci vypis\n");
+	PRINT(" -p: nacita konfiguraciu zo suboru ktory je v nasledujucom argumente\n");
+	PRINT(" -mc: zmeni maximalny pocet klientov\n");
+	PRINT(" -s: program sa sprava ako server\n");
+	PRINT(" -c: program sa sprava ako client\n");
 	PRINT(" -i: zapne logovanie do suboru ktory je v nasledujucom argumente\n");
-	PRINT(" -c: vykona funkciu ktora je v dalsom argumente a nasledke sa program ukonci\n");
+	PRINT(" -r: vykona funkciu ktora je v dalsom argumente a nasledke sa program ukonci\n");
 }
 
-int getEsp(void){
-	asm("movl %esp, %EAX;");
+/**
+ * Funckia priradí do premenne aktualny procesorový čas
+ *
+ * @param input
+ */
+void setTimeTo(struct tms * input){
+	asm("mov $0x2b, %%eax;" //inline asm na ziskanie pointra na strukturu kde je ulozene machine name
+		"int $0x80;"
+		:
+		:"b"(input)
+		);
 }
 
-int getPID(void){
-	asm("movl $0x14,%EAX;"
-		"int $0x80;");
+/**
+ * Funkcia preitoruje adresár na vstupe
+ *
+ * @param name
+ * @param level
+ */
+void listdir(const char *name, int level){
+    DIR * folder;
+    struct dirent * entry;
+
+	//ak je argument súbor alebo nieje prístupný tak skončíme
+    if (!(folder = opendir(name)) || !(entry = readdir(folder))){
+        return;
+    }
+
+    do {
+		//ak sa jedná o adresár tak vypíšeme  jeho názov a rekurzívne zavoláme funkciu
+        if (entry -> d_type == DT_DIR) {
+            char path[1024];
+
+			//vypíšeme do bufferu tabulatory a názov súboru
+            int len = snprintf(path, sizeof(path) - 1, "%s/%s", name, entry -> d_name);
+
+			//ukončíme retazec
+            path[len] = 0;
+
+			//ak sú je subor aktualny subor alebo predchadzajúci súbor tak pokračujeme dalej
+            if (strcmp(entry -> d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0){
+                continue;
+			}
+            PRINT("%*s[%s]\n", level * 2, "", entry->d_name);
+            listdir(path, level + 1);
+        }
+        else{
+			//vypíšeme názov súboru
+            PRINT("%*s- %s\n", level * 2, "", entry->d_name);
+        }
+    } while(entry = readdir(folder));
+
+	//zabrieme adresár
+    closedir(folder);
+}
+
+/**
+ * Funkcia zavolá rekurzívnu funkciu na výpis obsahu adresára
+ * @param args
+ */
+void scan(char * args){
+	LOG("vola sa funkcia scan(%s)\n", STRING(args));
+	char name[40];
+	memset(name, 0, 40);
+	sscanf(args, "%s", name);
+	listdir(name, 0);	
 }
 
 /**
@@ -142,26 +329,35 @@ int getPID(void){
  */
 void info(void){
 	time_t seconds;
-	double * test;
+	clock_t sTotalTime;
+	clock_t uTotalTime;
+	struct tms *test;
+	unsigned int * time = (unsigned int *)malloc(sizeof(unsigned int));;
+	char * c_time_string;
 
 	//zalogujeme ak treba 
 	LOG("vola sa funkcia info()\n");
 
-
 	asm("movl $0x0d,%%eax;"//inline assembler na ziskanie sekund od roku 1970
 		"int $0x80;"
 		:
-		:"b"(test));
-	seconds = *test;
-	PRINT("aktualny cas: %s\n", ctime(&seconds));
+		:"b"(time)
+		);
+	seconds = *time;
+	PRINT("aktualny cas je: %s", ctime(&seconds));
 
-	//systemove volanie pre zistenie PID
-	asm("movl $24,%%eax;"//inline assembler na ziskanie sekund od roku 1970
-		"int $0x80;"
-		:
-		:"b"(test));
+	for(int i=0, j=0; i<1000000000 ; i++, j *= i);
 
-	printf("esp: %d\n", getEsp());
+	setTimeTo(actTime);
+	uTotalTime = (double)(actTime -> tms_utime - startTime -> tms_utime) / CLOCKS_PER_SEC;
+	sTotalTime = (double)(actTime -> tms_stime - startTime -> tms_stime) / CLOCKS_PER_SEC;
+	printf("act user time: %ld (%ld)\n", actTime -> tms_utime, uTotalTime);
+	printf("act system time: %ld (%ld)\n", actTime -> tms_stime, sTotalTime);
+	printf("%f\n",(double)(actTime -> tms_utime - startTime -> tms_utime));
+	printf("%f\n",(double)(actTime -> tms_stime - startTime -> tms_stime));
+
+
+	free(time);
 }
 
 /**
@@ -169,7 +365,6 @@ void info(void){
  *
  * @param arg
  */
-
 void cat(char * arg){
 	//zalogujeme ak treba;
 	LOG("vola sa funkcia cat(%s)\n", STRING(arg));
@@ -192,8 +387,18 @@ void run(char * arg){
 		numWords = 0,
 		numChars = 0,
 		i;
+
 	//zalogujeme ak treba
 	LOG("vola sa funkcia run(%s)\n", STRING(arg));
+
+	//odstranime medzeru
+	arg++;
+
+	//odstranime znak konca riadku
+	arg[strlen(arg) - 1] = 0;
+
+	//zalogujeme ak treba
+	LOG("nazov suboru po spracovanie je: %s\n", STRING(arg));
 
 	subor = fopen(arg, "r");
 	if(IS_NULL(subor)){
@@ -244,6 +449,35 @@ void run(char * arg){
 		ERROR("subor %s sa nepodarilo zatvorit\n", arg);
 	}
 }
+
+/**
+ * Funckia analizuje prijatý buffer zo súborom
+ * @param buffer
+ * @param sizeRead
+ * @param descriptor
+ */
+void analyzeBuffer(char * buffer, int sizeRead, int descriptor){
+	clients[descriptor] -> numChars += sizeRead;
+	for(int i=0 ; i<sizeRead ; i++){
+		//pripocitam pocet riadkov
+		if(buffer[i] == '\n'){
+
+			clients[descriptor] -> numLines++;
+		}
+		if((buffer[i] >= 'a' && buffer[i] <= 'z') || 
+		   (buffer[i] >= 'A' && buffer[i] <= 'Z') || 
+		   (buffer[i] >= '0' && buffer[i] <= '9')){
+			if(!clients[descriptor] -> isWord){
+				clients[descriptor] -> numWords++;
+			}
+			clients[descriptor] -> isWord = 1;
+		}
+		else{
+			clients[descriptor] -> isWord = 0;
+		}
+	}
+}
+
 /******************************************BOTH**************************************************/
 void processFileArgs(char * fileName);
 
@@ -253,9 +487,8 @@ void processFileArgs(char * fileName);
  * @param arg1
  * @param arg2
  */
-
 void setOption(char * arg1, char * arg2){
-	int newPort;
+	int newPort, maxClients;
 
 	//zalogujeme ak treba
 	LOG("vola sa funkcia setOption(%s, %s)\n", STRING(arg1), STRING(arg2));
@@ -327,6 +560,15 @@ void setOption(char * arg1, char * arg2){
 		}
 		opt.port = newPort;
 	}
+	else if(EQUAL(arg1, "-mc")){
+		LOG("maximum clientov sa nastavuje na  %s\n", STRING(arg2));
+		maxClients = atoi(arg2);
+		if(newPort == 0){
+			ERROR("maximalny pocet klientov musi byt vasci ako 0\n");
+			return;
+		}
+		opt.maxClients = maxClients;
+	}
 }
 
 /**
@@ -353,6 +595,9 @@ void processInput(char * buff){
 	}
 	else if(EQUAL("run", arg)){
 		run(buff + n);
+	}
+	else if(EQUAL("scan", arg)){
+		scan(buff + n);
 	}
 	else if(EQUAL("cat", arg)){
 		cat(buff + n);
@@ -391,13 +636,16 @@ void processArguments(int argc, char **argv){
 		else if(EQUAL(argv[i], "-f")){ //ak chceme načítať konfiguračny subor
 			setOption("-f", argv[++i]);			
 		}
+		else if(EQUAL(argv[i], "-mc")){ //ak chceme zmeniť maximalne počet klientov
+			setOption("-mc", argv[++i]);			
+		}
 		else if(EQUAL(argv[i], "-s")){ //ak aplikacia beží ako server
 			setOption("-s", NULL);			
 		}
 		else if(EQUAL(argv[i], "-c")){ //ak aplikacia beží ako server
 			setOption("-c", NULL);		  
 		}
-		else if(EQUAL(argv[i], "-r")){ //
+		else if(EQUAL(argv[i], "-r")){ //ak chceme iba spustiť prikaz a nasledne ukončiť program
 			paramC = 1;
 		}
 		else if(paramC && EQUAL(argv[i], "-cat")){
@@ -451,6 +699,9 @@ void processFileArgs(char * fileName){
 		else if(EQUAL(key, "port")){
 			setOption("-p", val);
 		}
+		else if(EQUAL(key, "maxClients")){
+			setOption("-p", val);
+		}
 		LOG("%s => %s\n", STRING(key), STRING(val));
 	}
  	
@@ -487,16 +738,37 @@ void error(const char *msg){
  * @param socket
  * @param msg
  */
-void processMessage(int descriptor, int socket, char * msg){
+void processMessage(int descriptor, int socket, char * msg, int size){
 	//zalogujeme ak treba
 	LOG("vola sa funkcia processMessage(%d, %d, %s)\n", descriptor, socket, STRING(msg));
 
 	//nastavide output do socketu
 	opt.outDesc = descriptor;
-	
-	//spracujeme spravu
-	processInput(msg);
-	
+
+	//ak sa nejedná o vstup z klávesnice a správa je obsah súboru tak ho analyzujeme
+	if(descriptor > 0  && START_WITH(msg, RUN_CONTENT)){
+		LOG("bola prijata cast suboru pre prikaz run\n");
+		analyzeBuffer(msg + RUN_SIZE, size - RUN_SIZE , descriptor);
+	}
+	//ak sa nejedná o vstup z klávesnice a správa obsahuje koniec suboru tak odpovieme vysledkom analýzi
+	else if(descriptor > 0  && CONTAINS(msg, RUN_FINISH)){
+		LOG("bola prijata ukoncovacia sprava prikazu run\n");
+		PRINT("pocet riadkov: %d\n", clients[descriptor]	-> numLines);
+		PRINT("pocet slov: %d\n", clients[descriptor]		-> numWords);
+		PRINT("pocet pismen: %d\n", clients[descriptor]		-> numChars);
+
+		if(clients[descriptor] -> numLines == 0 && clients[descriptor] -> numChars > 0){
+			clients[descriptor] -> numLines = 1;
+		}
+
+		clients[descriptor] -> numLines = 0;
+		clients[descriptor] -> numWords = 0;
+		clients[descriptor] -> numChars = 0;
+	}
+	else{
+		//spracujeme spravu
+		processInput(msg);
+	}
 	//nastavime output na stdout
 	opt.outDesc = 0;
 }
@@ -504,7 +776,7 @@ void processMessage(int descriptor, int socket, char * msg){
 /**
  * Funckia spracováva všetky žiadosti prijaté serverom a takisto spravuje všetky spojenia
  *
- * @param portno
+ * @param portno -číslo portu na ktorom má server počúvať
  */
 void doServer(int portno){
 	int sockfd, newsockfd, n, i, option = 1;
@@ -536,8 +808,7 @@ void doServer(int portno){
  
 	//počúvame
 	listen(sockfd, MAX_CLIENTS);
- 
- 	
+
 	clilen = sizeof(cli_addr);
  
 	//vynulujeme buffer
@@ -552,9 +823,16 @@ void doServer(int portno){
 	while(opt.running){
 		waitingSocks = openedSocks;
 
-		//skontrolujeme či bol zadaný vstup buď na stdin alebo na stdin alebo na niektory zo socketov
+		//zalogujeme ak treba
+		LOG("caka sa na vstup...\n");
+
+
+		//skontrolujeme či bol zadaný vstup buď na stdin alebo na niektory zo socketov
 		if (select(opt.nfds + 1, &waitingSocks, NULL, NULL, NULL) == -1) {
-			error("select");
+			//pri zachyteni signalu nechceme skoncitg
+			if(errno != EINTR){
+				error("select");
+			}
 		}
 
 		//prejdeme vsetky sockety
@@ -570,8 +848,20 @@ void doServer(int portno){
 						continue;
 					}
 
+					if(MAX_CLIENTS == opt.numClients){
+						ERROR("Klient sa nemoze pripojit lebo uz je propojeny maximalny pocet klientov\n");
+						continue;
+					}
+
 					//zalogujeme ak treba
 					LOG("pripaja sa novy klient s id %d\n", newsockfd);
+
+					//zväčšíme počet pripojených klientov
+					opt.numClients++;
+					LOG("pocet pripojenych klientov je: %d\n", opt.numClients);
+
+					//inicializujeme objekt s klientom
+					clients[newsockfd] = initClient();
 
 					//pridame socket medzi otvorene sockety
 					FD_SET(newsockfd, &openedSocks);
@@ -587,14 +877,23 @@ void doServer(int portno){
 
 					//precitame spravu
 					n = read(i, buffer, BUFFER_SIZE - 1);
-
+					LOG("client[%d] poslal: %s\n", i, buffer);
 					if (n <= 0){
 						if(n == 0){
-							ERROR("bola prijata prazdna sprava takze rusime klienta %d\n", i);	
+							ERROR("bola prijata prazdna sprava takze rusime klienta %d\n", i);
 						}
 						else{
 							ERROR("Neporadilo sa citanie zo socketu od klienta %d\n", i);	
 						}
+
+
+
+						//znížime počet klientov
+						opt.numClients--;
+
+						//zalogujeme ak treba
+						LOG("pocet pripojenych klientov je: %d\n", opt.numClients);
+
 						//ukoncime socket
 						close(i);
 
@@ -604,7 +903,7 @@ void doServer(int portno){
 					}
 
 					//spracujeme prijatú správu
-					processMessage(i, sockfd, buffer);
+					processMessage(i, sockfd, buffer, n);
 				}
 			}
 		}
@@ -659,7 +958,7 @@ void doClient(char * host, int portno){
  
 	//pripoji sa k socketu
 	if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
-		error("Chyba pri pripajani");
+		error("Chyba pri pripajani k serveru");
 	}
 
 	//filedeskriptorom v waitingSocks nastavi bity na 0
@@ -677,7 +976,7 @@ void doClient(char * host, int portno){
 	    timeout.tv_usec = 0;
 
 		//zistime ci je zadany vstup z klavesnice alebo zo socketu
-		if (select(sockfd + 1, &waitingSocks, NULL, NULL, &timeout) == -1) {
+		if (select(sockfd + 1, &waitingSocks, NULL, NULL, /*&timeout*/ NULL) == -1) {
 			close(sockfd);
 			error("Chyba pri zistovanie zadaneho vstupu");
 		}
@@ -702,26 +1001,32 @@ void doClient(char * host, int portno){
 				close(sockfd);
 
 				//spustime aplikáciu lokálne
-				mainLoop();
+				//mainLoop();
 
 				//nechceme aby písal správu tak breakneme loop
 				break;
 			}
+			
 
-			//napise spravu
-			n = write(sockfd, buffer, strlen(buffer));
-			if (n < 0){
-				ERROR("Nastala chyba pri pisani do socketu\n");
+			//ak sa nevola prikaz run tak prepošleme vstup z klávesnice do socketu
+			if(!checkRun(sockfd, buffer)){
+				//napise spravu
+				n = write(sockfd, buffer, strlen(buffer));
+				if (n < 0){
+					ERROR("Nastala chyba pri pisani do socketu\n");
+				}
 			}
 
-			//ak zadal prikaz halt tak skoci
-			if(EQUAL(buffer, "halt\n")){
+			//ak zadal prikaz halt alebo quit tak skoci
+			if(EQUAL(buffer, "halt\n") || EQUAL(buffer, "quit\n")){
 				halt();
 			}
 		}
 		else{
+			/*
 			LOG("Zatvara sa klient pretoze casovy limit vyprsal\n");
 			halt();
+			*/
 		}
 		
 		//niečo bolo zapísané do socketu
@@ -742,10 +1047,10 @@ void doClient(char * host, int portno){
 					ERROR("Nastala chyba pri citani zo socketu\n");
 				}
 
-				//zmažeme escriptor
+				//zmažeme descriptor
 				FD_CLR(sockfd, &waitingSocks);
 
-				//skonšíme
+				//skončíme
 				halt();
 			}
 		 
@@ -763,6 +1068,38 @@ void doClient(char * host, int portno){
 }
 
 /**
+ * Funcia spracuje premenné prostredia
+ *
+ * @param envp
+ */
+void processVariables(char** envp){
+	LOG("vola sa funkcia processVariables(envp)\n");
+	char * parameter;
+	//defaultné správanie programu
+	parameter = getenv("G_DEF_TYPE");
+	if(IS_NOT_NULL(parameter)){
+		LOG("nasla sa premenna prostredia pre typ programu z hodnotou: %s\n", parameter);
+		if(EQUAL(parameter, "1")){
+			opt.type = TYPE_SERVER;
+		}
+		else if(EQUAL(parameter, "2")){
+			opt.type = TYPE_CLIENT;
+		}
+		else{
+			opt.type = TYPE_NORMAL;
+		}
+	}
+
+	//defaultný konfiguračný súbor
+	parameter = getenv("G_DEF_CONFIG");
+	if(IS_NOT_NULL(parameter)){
+		LOG("nasla sa premenna prostredia pre defaultny konfig: %s\n", parameter);
+		setOption("-f", parameter);
+	}
+
+}
+
+/**
  * Funkcia inicializuje všetky premenné a spracuje argumenty programu
  *
  * @param argc
@@ -770,14 +1107,48 @@ void doClient(char * host, int portno){
  * @param envp
  */
 void init(int argc, char **argv, char** envp){
+	actTime = (struct tms*)malloc(sizeof(struct tms));
+
+
 	//zalogujeme ak treba
 	LOG("vola sa funkcia init(%d, argv, envp)\n", argc);
 
 	//inicializujeme nastavenia
 	initOpt(&opt);
+    opt.maxClients	= MAX_CLIENTS;
+    opt.port 		= DEF_PORT;
 
 	//zpracujeme argumenty
 	processArguments(argc, argv);
+
+	//zpracujeme premenné prostredia
+	processVariables(envp);
+
+	clients = (ClientData **)malloc(sizeof(ClientData *) * (MAX_CLIENTS + 3));
+	memset(clients, 0, MAX_CLIENTS + 3);
+}
+
+/**
+ * Funkcia dealokuje všetky potrebné premenné
+ */
+void cleanUp(void){
+	//zalogujeme ak treba
+	LOG("vola sa funkcia cleanUp()\n");
+
+	//ak je otvorený logovací súbor tak ho zavrieme
+	if(IS_NOT_NULL(opt.logFile)){
+		closeFile(opt.logFile);
+	}
+
+	//vymažeme uvolnima pamäť pre všetky klientov 
+	for(int i=0 ; i<MAX_CLIENTS + 3 ; i++){
+		if(IS_NOT_NULL(clients[i])){
+			free(clients[i]);
+		}
+	}
+
+	//ovolnime pamäť pre objekt klientov
+	free(clients);
 }
 
 /**
@@ -800,6 +1171,53 @@ void mainLoop(void){
 		//spracujeme input
 		processInput(buff);
 	}
+	LOG("skoncil loop v mainLoope\n");
+}
+
+/**
+ * Funckia spracuje prijaté signály
+ */
+void signalHandler(int signo){
+	if (signo == SIGNAL_INFO){
+		LOG("received signal SIGNAL_INFO = %d\n", SIGNAL_INFO);
+		info();
+	}
+	else if (signo == SIGNAL_QUIT){
+		LOG("received signal SIGNAL_QUIT = %d\n", SIGNAL_QUIT);
+	}
+	else if (signo == SIGNAL_HALT){
+		LOG("received signal SIGNAL_HALT = %d\n", SIGNAL_HALT);
+		
+		halt();
+		
+		cleanUp();
+		
+		//zalogujeme ak treba
+		LOG("program konci\n");
+		
+		exit(EXIT_SUCCESS);
+	}
+	else if (signo == SIGNAL_CONFIG){
+		LOG("received signal SIGNAL_CONFIG = %d\n", SIGNAL_CONFIG);
+	}
+}
+
+/**
+ * Funckia priradí priradí handlere k prijatým signálom
+ */
+void setSignalHandlers(void){
+	if(signal(SIGNAL_CONFIG, signalHandler) == SIG_ERR){
+		ERROR("can't catch SIGNAL_CONFIG\n");
+	}
+	if(signal(SIGNAL_HALT, signalHandler) == SIG_ERR){
+		ERROR("can't catch SIGNAL_HALT\n");
+	}
+	if(signal(SIGNAL_QUIT, signalHandler) == SIG_ERR){
+		ERROR("can't catch SIGNAL_QUIT\n");
+	}
+	if(signal(SIGNAL_INFO, signalHandler) == SIG_ERR){
+		ERROR("can't catch SIGNAL_INFO\n");
+	}
 }
 
 /**
@@ -811,6 +1229,15 @@ void mainLoop(void){
  * @return
  */
 int main(int argc, char **argv, char** envp){
+	if(CHUNK_SIZE >= BUFFER_SIZE + 10){
+		ERROR("CHUNK_SIZE musi byt aspon o 11 meni ako BUFFER_SIZE\n");
+		return 0;
+	}
+	//uložime aktuálny čas procesoru
+	startTime = (struct tms*)malloc(sizeof(struct tms));
+	setTimeTo(startTime);
+
+	setSignalHandlers();
 	//inicializujeme aplikaciu
 	printf("pid: %d\n", getPID());
 	init(argc, argv, envp);
@@ -828,10 +1255,7 @@ int main(int argc, char **argv, char** envp){
 			break;
 	}
 
-	//ak je otvorený logovací súbor tak ho zavrieme
-	if(IS_NOT_NULL(opt.logFile)){
-		closeFile(opt.logFile);
-	}
+	cleanUp();
 
 	//zalogujeme ak treba
 	LOG("program konci\n");
